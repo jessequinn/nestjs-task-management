@@ -5,6 +5,8 @@ import {
   ConflictException,
   InternalServerErrorException,
 } from '@nestjs/common';
+import * as argon2 from 'argon2';
+import { RuntimeException } from '@nestjs/core/errors/exceptions/runtime.exception';
 
 @EntityRepository(User)
 export class UserRepository extends Repository<User> {
@@ -12,7 +14,8 @@ export class UserRepository extends Repository<User> {
     const { username, password } = authCredentialsDto;
     const user = new User();
     user.username = username;
-    user.password = password;
+    user.password = await this.encryptPassword(password);
+
     try {
       await user.save();
     } catch (e) {
@@ -22,6 +25,28 @@ export class UserRepository extends Repository<User> {
       } else {
         throw new InternalServerErrorException();
       }
+    }
+  }
+
+  async validateUserPassword(
+    authCredentialsDto: AuthCredentialsDto,
+  ): Promise<string> {
+    const { username, password } = authCredentialsDto;
+    const user = await this.findOne({ username });
+    if (user && (await user.validatePassword(password))) {
+      return user.username;
+    } else return null;
+  }
+
+  private async encryptPassword(password: string): Promise<string> {
+    try {
+      return await argon2.hash(password, {
+        type: argon2.argon2i,
+        memoryCost: 2 ** 16,
+        hashLength: 32,
+      });
+    } catch (e) {
+      throw new InternalServerErrorException('Could not hash password');
     }
   }
 }
